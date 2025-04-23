@@ -1,7 +1,8 @@
-const { AuthStrategy } = require('whatsapp-web.js');
+const { Client } = require('whatsapp-web.js');
 const mongoose = require('mongoose');
 
-class MongoAuth extends AuthStrategy {
+// Perbaikan: Gunakan BaseAuthStrategy yang benar
+class MongoAuth extends Client.AuthStrategy {
   constructor({ modelName = 'whatsapp_sessions' }) {
     super();
     this.modelName = modelName;
@@ -9,20 +10,24 @@ class MongoAuth extends AuthStrategy {
   }
 
   async beforeAuthInit() {
-    // Connect to MongoDB
-    await mongoose.connect(process.env.MONGODB_URI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true
-    });
+    try {
+      await mongoose.connect(process.env.MONGODB_URI, {
+        useNewUrlParser: true,
+        useUnifiedTopology: true
+      });
 
-    // Define session schema
-    const sessionSchema = new mongoose.Schema({
-      sessionId: String,
-      data: Object,
-      createdAt: { type: Date, expires: '30d', default: Date.now }
-    });
+      const sessionSchema = new mongoose.Schema({
+        sessionId: { type: String, default: 'default' },
+        data: Object,
+        createdAt: { type: Date, expires: '30d', default: Date.now }
+      });
 
-    this.sessionModel = mongoose.model(this.modelName, sessionSchema);
+      this.sessionModel = mongoose.model(this.modelName, sessionSchema);
+      console.log('MongoDB connected');
+    } catch (err) {
+      console.error('MongoDB connection error:', err);
+      throw err;
+    }
   }
 
   async afterAuthInit() {
@@ -30,21 +35,34 @@ class MongoAuth extends AuthStrategy {
   }
 
   async getAuthData() {
-    const session = await this.sessionModel.findOne({ sessionId: 'default' });
-    return session?.data || null;
+    try {
+      const session = await this.sessionModel.findOne({ sessionId: 'default' });
+      return session?.data || null;
+    } catch (err) {
+      console.error('Error getting auth data:', err);
+      return null;
+    }
   }
 
   async saveAuthData(data) {
-    await this.sessionModel.findOneAndUpdate(
-      { sessionId: 'default' },
-      { $set: { data } },
-      { upsert: true }
-    );
+    try {
+      await this.sessionModel.findOneAndUpdate(
+        { sessionId: 'default' },
+        { $set: { data } },
+        { upsert: true, new: true }
+      );
+    } catch (err) {
+      console.error('Error saving auth data:', err);
+    }
   }
 
   async clearAuthData() {
-    await this.sessionModel.deleteOne({ sessionId: 'default' });
+    try {
+      await this.sessionModel.deleteOne({ sessionId: 'default' });
+    } catch (err) {
+      console.error('Error clearing auth data:', err);
+    }
   }
 }
 
-module.exports = MongoAuth
+module.exports = MongoAuth;
